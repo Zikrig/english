@@ -1,0 +1,140 @@
+{
+  "timezone": "Europe/Moscow",
+  "posts": [
+    {
+      "key": "day1_all",
+      "title": "Day 1 — 29 Dec — Christmas ad",
+      "level": "all",
+      "send_at": "2025-12-29 10:00",
+      "text_html": "<b>🔹 Day 1 — 29 December</b>\n\nWatch a christmas ad, complete the gaps.\nWhat do you need for festive mood? Write three must-haves:\nhttps://www.youtube.com/watch?v=H_2dh3DeY0k"
+    },
+    {
+      "key": "day2_starters",
+      "title": "Day 2 — 30 Dec — Song (Starters)",
+      "level": "starters",
+      "send_at": "2025-12-30 10:00",
+      "text_html": "<b>🔹 Day 2 — 30 December</b>\n\nListening / Песня\n\nTask for all: Listen to the song <i>Happy New Year</i> 🎵\n\n<b>Starters:</b>\nComplete the gaps, send a screenshot:\nhttps://learningapps.org/watch?v=p2igj3soc25\n\nAnswer the question: is it a sad or happy song? Do you like it?\n\n📥 <b>Send text and screenshot</b> / Текст и скрин"
+    },
+    {
+      "key": "day2_explorers",
+      "title": "Day 2 — 30 Dec — Song (Explorers)",
+      "level": "explorers",
+      "send_at": "2025-12-30 10:00",
+      "text_html": "<b>🔹 Day 2 — 30 December</b>\n\nListening / Песня\n\nTask for all: Listen to the song <i>Happy New Year</i> 🎵\n\n<b>Explorers:</b>\nComplete the gaps, send a screenshot:\nhttps://learningapps.org/watch?v=p2igj3soc25\n\nWrite 1–2 sentences about the meaning of the song. Do you like the song?\n\n📥 <b>Send text and screenshot</b> / Текст и скрин"
+    },
+    {
+      "key": "day2_achievers",
+      "title": "Day 2 — 30 Dec — Song (Achievers)",
+      "level": "achievers",
+      "send_at": "2025-12-30 10:00",
+      "text_html": "<b>🔹 Day 2 — 30 December</b>\n\nListening / Песня\n\nTask for all: Listen to the song <i>Happy New Year</i> 🎵\n\n<b>Achievers:</b>\nComplete the gaps, send a screenshot:\nhttps://learningapps.org/watch?v=px0uh53wj25\n\nWrite 2–3 sentences about the meaning + your feelings.\n\n📥 <b>Send text and screenshot</b> / Текст и скрин"
+    },
+    {
+      "key": "day3_msg1_all",
+      "title": "Day 3 — 31 Dec — Music (msg 1)",
+      "level": "all",
+      "send_at": "2025-12-31 10:00",
+      "text_html": "<b>🔹 Day 3 — 31 December</b>\n\n<b>Message 1:</b>\n\nСегодня не будет задания, только хорошее настроение и праздничная музыка!\n\nПредлагаю тебе включить сегодня эти 5 новогодних песен, которые точно создадут настроение.\nРезать салаты, наряжаться на праздник и упаковывать подарки будет классно под эту подборку!\n\nПриветствуется слушать и подпевать на английском ;) Выбери песню и открой lyrics.\n\n• Coldplay – Christmas Lights\n• Eartha Kitt – Santa Baby\n• Last Christmas (new version)\n• Billy Mack – Christmas is all around\n• Winter Wonderland – Lady Gaga\n\nВ ответ отправь смайлик — твоё впечатление о песнях и какая песня понравилась больше всего!"
+    },
+    {
+      "key": "day3_msg2_all",
+      "title": "Day 3 — 31 Dec — Video (msg 2)",
+      "level": "all",
+      "send_at": "2025-12-31 18:00",
+      "text_html": "<b>🔹 Day 3 — 31 December</b>\n\n<b>Message 2:</b>\n\n🎥 My video congratulation"
+    },
+    {
+      "key": "day4_all",
+      "title": "Day 4 — 1 Jan — New Year mood",
+      "level": "all",
+      "send_at": "2026-01-01 10:00",
+      "text_html": "<b>DAY 4 — 1 January</b>\n\nNew Year mood / Настроение\n\nAll levels: Send a photo or picture showing your New Year mood + 1–2 sentences.\nОтправьте фото или картинку, показывающую ваше новогоднее настроение / как проводите каникулы + 1–2 предложения."
+    },
+    {
+      "key": "day5_all",
+      "title": "Day 5 — 2 Jan — Winter bucket list",
+      "level": "all",
+      "send_at": "2026-01-02 10:00",
+      "text_html": "<b>DAY 5 — 2 January</b>\n\nWinter Bucket list"
+    },
+    {
+      "key": "day6_starters",
+      "title": "Day 6 — 3 Jan — Year reflection (Starters)",
+      "level": "starters",
+      "send_at": "2026-01-03 10:00",
+      "text_html": "<b>🔹 Day 6 — 3 January</b>\n\nYear reflection / Итоги года\n\n<b>Starters / Начинающие:</b>\nThink about 3–5 words or phrases you liked this year. Write them + make sentences with these phrases.\nВспомните 3–5 слов или фраз которые понравились в этом году. Напишите эти фразы + предложения с этими фразами.\n\n📥 <b>Send text</b> / Отправьте текст"
+    },
+    {
+      "key": "day6_explorers",
+      "title": "Day 6 — 3 Jan — Year reflection (Explorers)",
+      "level": "explorers",
+      "send_at": "2026-01-03 10:00",
+      "text_html": "<b>🔹 Day 6 — 3 January</b>\n\nYear reflection / Итоги года\n\n<b>Explorers / Продолжающие:</b>\nChoose 5–7 expressions from this year. Write them here and create your own sentences with them.\n\n📥 <b>Send text</b> / Отправьте текст"
+    },
+    {
+      "key": "day6_achievers",
+      "title": "Day 6 — 3 Jan — Year reflection (Achievers)",
+      "level": "achievers",
+      "send_at": "2026-01-03 10:00",
+      "text_html": "<b>🔹 Day 6 — 3 January</b>\n\nYear reflection / Итоги года\n\n<b>Achievers / Продолжающие сильные:</b>\nChoose 5–7 favourite words or phrases, write example sentences + ⭐ mark your top 1.\n\n📥 <b>Send text</b> / Отправьте текст"
+    },
+    {
+      "key": "day7_all",
+      "title": "Day 7 — 4 Jan — Reading (all levels)",
+      "level": "all",
+      "send_at": "2026-01-04 10:00",
+      "text_html": "<b>🔹 Day 7 — 4 January</b>\n\nWhy new year’s resolutions don’t work (3 levels)\n\nReading / Чтение\n\n<b>Starters:</b> Short text (~150 words), 2–3 questions (facts).\n<b>Explorers:</b> Text (~200 words), 3 questions + 1 new word.\n<b>Achievers:</b> Article (~400 words), 3 questions + opinion + 1 new expression."
+    },
+    {
+      "key": "day8_all",
+      "title": "Day 8 — 5 Jan — SMART resolution",
+      "level": "all",
+      "send_at": "2026-01-05 10:00",
+      "text_html": "<b>🔹 Day 8 — 5 January</b>\n\nYour 1 NY resolution for 2026 (make it SMART)"
+    },
+    {
+      "key": "day9_all",
+      "title": "Day 9 — 6 Jan — Gratitude",
+      "level": "all",
+      "send_at": "2026-01-06 10:00",
+      "text_html": "<b>🔹 Day 9 — 6 January</b>\n\n✨ <b>Gratitude & Good Things Day</b>\n\n<b>ENGLISH</b>\nToday — only good things 💛\nChoose ONE of these and write about it:\n⭐️ 1 thing you are grateful for\n⭐️ 1 English win (even a tiny one!)\n⭐️ 1 good thing that happened these holidays\n\n🌱 <b>Starters</b>: 2–3 simple sentences.\n🚀 <b>Explorers</b>: 4–5 sentences + why it’s important to you.\n🌟 <b>Achievers</b>: warm mini-story (6–7 sentences): situation + feelings + why it matters.\n\n📥 <b>Text or voice</b> — both great!\n\n— — —\n\n<b>РУССКИЙ</b>\nСегодня — только хорошее 💛\nВыберите ОДИН вариант и напишите:\n⭐️ одну вещь, за которую благодарны\n⭐️ одну победу в английском (даже маленькую)\n⭐️ одну хорошую вещь, которая случилась на каникулах\n\n🌱 <b>Начинающие</b> — 2–3 предложения\n🚀 <b>Продолжающие</b> — 4–5 предложений + почему это важно\n🌟 <b>Achievers</b> — тёплая мини-история 6–7 предложений\n\n📥 Можно текст или голос"
+    },
+    {
+      "key": "day10_msg1_all",
+      "title": "Day 10 — 7 Jan — Final (msg 1)",
+      "level": "all",
+      "send_at": "2026-01-07 10:00",
+      "text_html": "<b>🔹 Day 10 — 7 January</b>\n\nFinal / Финал — <b>Merry Christmas</b>\n\nMerry Christmas ✨💙\nThank you for being part of this warm holiday English journey.\nI hope it brought you joy, motivation, confidence — and a little magic.\n\nOur challenge is almost finished… but not your English story 😊\n\nIf you’d like, you can also share:\n• how you felt during the challenge\n• what you liked most\n• what was helpful\n\nThis is optional, but I’ll be very happy to read 🌟\n\n📥 <b>Text or voice</b>"
+    },
+    {
+      "key": "day10_msg2_all",
+      "title": "Day 10 — 7 Jan — Deadline (msg 2)",
+      "level": "all",
+      "send_at": "2026-01-07 18:00",
+      "text_html": "Message 2\n\nYou still have time to finish tasks:\n⏰ Deadline — 10 January, 12:00\nAfter that I will check everything, count results and… 🎁 choose prize winners!\n\nI’m really proud of you. Merry Christmas and thank you for being here 🌷"
+    },
+    {
+      "key": "reminder_day7_day8",
+      "title": "Reminder — Day 7/8",
+      "level": "all",
+      "send_at": "2026-01-05 18:00",
+      "text_html": "⏳ Gentle reminder: you can finish all tasks by 10 January, 10:00"
+    },
+    {
+      "key": "reminder_day10",
+      "title": "Reminder — Day 10",
+      "level": "all",
+      "send_at": "2026-01-08 10:00",
+      "text_html": "🎁 You still have time to complete all tasks until 10 January, 10:00"
+    },
+    {
+      "key": "reminder_last_day",
+      "title": "Last reminder — deadline",
+      "level": "all",
+      "send_at": "2026-01-10 08:00",
+      "text_html": "⏰ Last reminder — deadline 10:00"
+    }
+  ]
+}
+
+
