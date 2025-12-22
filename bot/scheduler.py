@@ -38,13 +38,12 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
             users = get_all_users(db)
         else:
             users = get_users_by_level(db, post.level)
+        total_count = len(users)
         sent_count = 0
         for user in users:
             try:
                 await bot.send_message(chat_id=user.telegram_id, text=post.text)
                 sent_count += 1
-                # notify admins on each delivered message
-                await _notify_admins(bot, post_id=post.id, post_level=post.level, user_telegram_id=user.telegram_id)
                 await asyncio.sleep(0.04)
             except TelegramRetryAfter as e:
                 await asyncio.sleep(float(e.retry_after) + 0.5)
@@ -60,22 +59,23 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
         now = dt.datetime.now()
         mark_post_sent(db, post_id, sent_at=now)
         logger.info("Post %s sent to %s users", post_id, sent_count)
+        await _notify_admins_summary(bot, post_id=post.id, post_level=post.level, delivered=sent_count, total=total_count)
     finally:
         db.close()
 
 
-async def _notify_admins(bot: Bot, *, post_id: int, post_level: str, user_telegram_id: int) -> None:
+async def _notify_admins_summary(bot: Bot, *, post_id: int, post_level: str, delivered: int, total: int) -> None:
     """
-    Sends admin notification for each delivered message.
+    Sends ONE admin notification per post send.
     Admin IDs are stored on the Bot instance as `bot._admin_ids` (set in main).
     """
     admin_ids = getattr(bot, "_admin_ids", None)
     if not admin_ids:
         return
     text = (
-        f"✅ Доставлено\n"
+        f"✅ Рассылка завершена\n"
         f"Пост: <b>#{post_id}</b> (уровень: <b>{post_level}</b>)\n"
-        f"Пользователь: <a href=\"tg://user?id={user_telegram_id}\">{user_telegram_id}</a>"
+        f"Доставлено: <b>{delivered}</b> / <b>{total}</b>"
     )
     for admin_id in list(admin_ids):
         try:
