@@ -61,6 +61,42 @@ def _extract_message_content(message: Message) -> tuple[str, str | None, str | N
 
     return text, None, None
 
+
+async def _send_post_preview(message: Message, post) -> None:
+    """
+    Sends a preview of the post content into the current chat.
+    This is needed because "view post" is rendered as text, but post may contain media.
+    """
+    media_type = (getattr(post, "media_type", None) or "").strip().lower()
+    file_id = getattr(post, "file_id", None)
+    text = getattr(post, "text", "") or ""
+
+    # Telegram caption limit is 1024 chars. If longer, send as separate message.
+    caption = text if len(text) <= 1024 else ""
+    tail_text = "" if caption else text
+
+    if not media_type or not file_id:
+        return
+
+    if media_type == "photo":
+        await message.answer_photo(photo=file_id, caption=caption)
+    elif media_type == "video":
+        await message.answer_video(video=file_id, caption=caption)
+    elif media_type == "document":
+        await message.answer_document(document=file_id, caption=caption)
+    elif media_type == "audio":
+        await message.answer_audio(audio=file_id, caption=caption)
+    elif media_type == "voice":
+        await message.answer_voice(voice=file_id, caption=caption)
+    elif media_type == "video_note":
+        await message.answer_video_note(video_note=file_id)
+    else:
+        # unknown media type: ignore
+        return
+
+    if tail_text.strip():
+        await message.answer(tail_text)
+
 def _is_admin(user_id: int | None, settings: Settings) -> bool:
     return bool(user_id) and user_id in settings.admin_ids
 
@@ -370,6 +406,11 @@ async def open_post(call: CallbackQuery, settings: Settings, session_factory):
         f"{post.text}",
         reply_markup=post_actions_kb(post.id, back_cb=back_cb),
     )
+    # Send media preview (photo/video/voice/video_note/etc) as separate message
+    try:
+        await _send_post_preview(call.message, post)
+    except Exception:
+        pass
     await call.answer()
 
 
@@ -551,6 +592,10 @@ async def edit_content(message: Message, state: FSMContext, settings: Settings, 
             f"{post.text}",
             reply_markup=post_actions_kb(post.id),
         )
+        try:
+            await _send_post_preview(message, post)
+        except Exception:
+            pass
 
 
 @admin_router.message(EditPostFSM.send_at)
