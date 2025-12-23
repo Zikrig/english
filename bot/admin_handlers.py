@@ -21,7 +21,7 @@ from bot.db import (
     update_post_text_title,
 )
 from bot.keyboards import (
-    LEVELS,
+    POST_LEVELS,
     admin_menu_kb,
     admin_post_level_kb,
     confirm_delete_kb,
@@ -311,7 +311,7 @@ async def create_pick_level(call: CallbackQuery, settings: Settings, state: FSMC
         await call.answer("Нет доступа", show_alert=True)
         return
     level = call.data.split(":", 1)[1]
-    if level != "all" and level not in LEVELS:
+    if level != "all" and level not in POST_LEVELS:
         await call.answer("Неизвестный уровень", show_alert=True)
         return
     await state.update_data(level=level)
@@ -479,7 +479,7 @@ async def edit_pick_level(call: CallbackQuery, settings: Settings, state: FSMCon
         await call.answer("Нет доступа", show_alert=True)
         return
     level = call.data.split(":", 1)[1]
-    if level != "all" and level not in LEVELS:
+    if level != "all" and level not in POST_LEVELS:
         await call.answer("Неизвестный уровень", show_alert=True)
         return
 

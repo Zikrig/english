@@ -9,6 +9,11 @@ LEVELS = {
     "achievers": "🌟 Продолжающие сильные / Achievers",
 }
 
+POST_LEVELS = {
+    **LEVELS,
+    "admins": "АДМИНЫ (тест)",
+}
+
 
 def admin_menu_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
@@ -72,7 +77,7 @@ def user_level_kb() -> InlineKeyboardMarkup:
 def admin_post_level_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="🌍 Все уровни (all)", callback_data="plevel:all"))
-    for key, label in LEVELS.items():
+    for key, label in POST_LEVELS.items():
         kb.row(InlineKeyboardButton(text=label, callback_data=f"plevel:{key}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back"))
     return kb.as_markup()
@@ -98,7 +103,7 @@ def dates_kb(dates: list[str], *, page: int, has_prev: bool, has_next: bool) -> 
 def levels_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="🌍 Все (all)", callback_data="alevel:all"))
-    for key, label in LEVELS.items():
+    for key, label in POST_LEVELS.items():
         kb.row(InlineKeyboardButton(text=label, callback_data=f"alevel:{key}"))
     kb.row(InlineKeyboardButton(text="⬅️ Назад", callback_data="admin:back"))
     return kb.as_markup()

@@ -34,15 +34,22 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
         if post.sent:
             return
 
-        if post.level == "all":
+        # recipients
+        if post.level == "admins":
+            admin_ids = list(getattr(bot, "_admin_ids", []) or [])
+            chat_ids = [int(x) for x in admin_ids]
+        elif post.level == "all":
             users = get_all_users(db)
+            chat_ids = [u.telegram_id for u in users]
         else:
             users = get_users_by_level(db, post.level)
-        total_count = len(users)
+            chat_ids = [u.telegram_id for u in users]
+
+        total_count = len(chat_ids)
         sent_count = 0
-        for user in users:
+        for chat_id in chat_ids:
             try:
-                await _deliver_post_to_user(bot, user.telegram_id, post)
+                await _deliver_post_to_user(bot, chat_id, post)
                 sent_count += 1
                 await asyncio.sleep(0.04)
             except TelegramRetryAfter as e:
@@ -53,7 +60,7 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
             except TelegramBadRequest:
                 continue
             except Exception:
-                logger.exception("Failed sending post_id=%s to telegram_id=%s", post_id, user.telegram_id)
+                logger.exception("Failed sending post_id=%s to telegram_id=%s", post_id, chat_id)
                 continue
 
         now = dt.datetime.now()
