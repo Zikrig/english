@@ -15,6 +15,8 @@ from bot.db import (
     get_posts_by_level,
     count_posts_by_date,
     count_posts_by_level,
+    get_broadcast_settings,
+    set_teaser_content,
     update_post_level,
     update_post_content,
     update_post_send_time,
@@ -116,6 +118,10 @@ class EditPostFSM(StatesGroup):
     content = State()
 
 
+class TeaserFSM(StatesGroup):
+    content = State()
+
+
 @admin_router.message(Command("admin"))
 async def cmd_admin(message: Message, settings: Settings):
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
@@ -131,6 +137,45 @@ async def admin_back(call: CallbackQuery, settings: Settings):
         return
     await call.message.edit_text("Админ-панель:", reply_markup=admin_menu_kb())
     await call.answer()
+
+
+@admin_router.callback_query(F.data == "admin:teaser")
+async def admin_teaser(call: CallbackQuery, settings: Settings, state: FSMContext, session_factory):
+    if not _is_admin(call.from_user.id, settings):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    db = session_factory()
+    try:
+        s = get_broadcast_settings(db)
+    finally:
+        db.close()
+    await state.clear()
+    await state.set_state(TeaserFSM.content)
+    current = "не задан" if not (s.teaser_text.strip() or s.teaser_file_id) else "задан"
+    await call.message.edit_text(
+        "🎁 <b>Сюрприз (прелюдия)</b>\n\n"
+        "Это сообщение уходит перед каждым постом и содержит кнопку <b>Открыть</b>.\n\n"
+        f"Текущий статус: <b>{current}</b>\n\n"
+        "Пришлите новое сообщение (текст / фото / видео / кружок / voice / audio / document)."
+    )
+    await call.answer()
+
+
+@admin_router.message(TeaserFSM.content)
+async def admin_teaser_save(message: Message, state: FSMContext, settings: Settings, session_factory):
+    if not _is_admin(message.from_user.id if message.from_user else None, settings):
+        return
+    text, media_type, file_id = _extract_message_content(message)
+    if not text.strip() and not file_id:
+        await message.answer("Сообщение пустое. Пришлите текст или медиа ещё раз:")
+        return
+    db = session_factory()
+    try:
+        set_teaser_content(db, text=text, media_type=media_type, file_id=file_id)
+    finally:
+        db.close()
+    await state.clear()
+    await message.answer("✅ Сюрприз обновлён.", reply_markup=admin_menu_kb())
 
 @admin_router.callback_query(F.data == "admin:dates")
 async def admin_dates(call: CallbackQuery, settings: Settings, session_factory):

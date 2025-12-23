@@ -9,6 +9,7 @@ from apscheduler.triggers.date import DateTrigger
 from sqlalchemy.orm import Session
 
 from bot.db import (
+    get_broadcast_settings,
     Post,
     get_all_users,
     get_post,
@@ -17,6 +18,7 @@ from bot.db import (
     get_users_by_level,
     mark_post_sent,
 )
+from bot.keyboards import open_post_kb
 
 logger = logging.getLogger(__name__)
 
@@ -35,21 +37,28 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
             return
 
         # recipients
+        admin_ids = [int(x) for x in (getattr(bot, "_admin_ids", []) or [])]
         if post.level == "admins":
-            admin_ids = list(getattr(bot, "_admin_ids", []) or [])
-            chat_ids = [int(x) for x in admin_ids]
+            chat_ids = admin_ids
         elif post.level == "all":
             users = get_all_users(db)
-            chat_ids = [u.telegram_id for u in users]
+            chat_ids = [u.telegram_id for u in users] + admin_ids
         else:
             users = get_users_by_level(db, post.level)
-            chat_ids = [u.telegram_id for u in users]
+            chat_ids = [u.telegram_id for u in users] + admin_ids
+
+        # uniq
+        chat_ids = list(dict.fromkeys(chat_ids))
 
         total_count = len(chat_ids)
         sent_count = 0
+        teaser = get_broadcast_settings(db)
         for chat_id in chat_ids:
             try:
-                await _deliver_post_to_user(bot, chat_id, post)
+                if teaser.teaser_text.strip() or teaser.teaser_file_id:
+                    await _deliver_teaser_to_user(bot, chat_id, teaser, post_id=post.id)
+                else:
+                    await _deliver_post_to_user(bot, chat_id, post)
                 sent_count += 1
                 await asyncio.sleep(0.04)
             except TelegramRetryAfter as e:
@@ -106,6 +115,42 @@ async def _deliver_post_to_user(bot: Bot, chat_id: int, post: Post) -> None:
         return
 
     await bot.send_message(chat_id=chat_id, text=text)
+
+
+async def _deliver_teaser_to_user(bot: Bot, chat_id: int, teaser, *, post_id: int) -> None:
+    """
+    Send teaser content with "Open" button. Teaser is stored in BroadcastSettings.
+    """
+    media_type = (teaser.teaser_media_type or "").strip().lower()
+    file_id = teaser.teaser_file_id
+    text = teaser.teaser_text or ""
+    kb = open_post_kb(post_id)
+
+    if not media_type or not file_id:
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=kb)
+        return
+
+    if media_type == "photo":
+        await bot.send_photo(chat_id=chat_id, photo=file_id, caption=text, reply_markup=kb)
+        return
+    if media_type == "video":
+        await bot.send_video(chat_id=chat_id, video=file_id, caption=text, reply_markup=kb)
+        return
+    if media_type == "document":
+        await bot.send_document(chat_id=chat_id, document=file_id, caption=text, reply_markup=kb)
+        return
+    if media_type == "audio":
+        await bot.send_audio(chat_id=chat_id, audio=file_id, caption=text, reply_markup=kb)
+        return
+    if media_type == "voice":
+        await bot.send_voice(chat_id=chat_id, voice=file_id, caption=text, reply_markup=kb)
+        return
+    if media_type == "video_note":
+        await bot.send_video_note(chat_id=chat_id, video_note=file_id)
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=kb)
+        return
+
+    await bot.send_message(chat_id=chat_id, text=text, reply_markup=kb)
 
 async def _notify_admins_summary(bot: Bot, *, post_id: int, post_level: str, delivered: int, total: int) -> None:
     """

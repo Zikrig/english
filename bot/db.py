@@ -39,6 +39,16 @@ class Post(Base):
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(), default=lambda: dt.datetime.now())
 
 
+class BroadcastSettings(Base):
+    __tablename__ = "broadcast_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    teaser_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    teaser_media_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    teaser_file_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime(), default=lambda: dt.datetime.now())
+
+
 def make_engine(database_url: str):
     # Ensure local folder exists for sqlite relative path
     if database_url.startswith("sqlite:///./"):
@@ -73,6 +83,12 @@ def init_db(engine) -> None:
             expected_users = {"id", "telegram_id", "level", "joined_at"}
             if users_cols and not expected_users.issubset(users_cols):
                 conn.exec_driver_sql("DROP TABLE IF EXISTS users")
+
+            # broadcast_settings
+            bs_cols = table_columns("broadcast_settings")
+            expected_bs = {"id", "teaser_text", "teaser_media_type", "teaser_file_id", "updated_at"}
+            if bs_cols and not expected_bs.issubset(bs_cols):
+                conn.exec_driver_sql("DROP TABLE IF EXISTS broadcast_settings")
 
             conn.commit()
     except Exception:
@@ -171,6 +187,26 @@ def get_posts_by_level(db: Session, level: PostLevel, *, limit: int, offset: int
         .offset(offset)
     )
     return list(db.scalars(stmt))
+
+
+def get_broadcast_settings(db: Session) -> BroadcastSettings:
+    s = db.get(BroadcastSettings, 1)
+    if s:
+        return s
+    s = BroadcastSettings(id=1, teaser_text="", teaser_media_type=None, teaser_file_id=None)
+    db.add(s)
+    db.commit()
+    return s
+
+
+def set_teaser_content(db: Session, *, text: str, media_type: Optional[str], file_id: Optional[str]) -> BroadcastSettings:
+    s = get_broadcast_settings(db)
+    s.teaser_text = text
+    s.teaser_media_type = media_type
+    s.teaser_file_id = file_id
+    s.updated_at = dt.datetime.now()
+    db.commit()
+    return s
 
 
 def get_unsent_future_posts(db: Session, now: dt.datetime) -> list[Post]:

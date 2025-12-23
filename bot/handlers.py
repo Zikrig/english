@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import re
 
 from bot.config import Settings
-from bot.db import set_user_level, upsert_user
+from bot.db import get_post, set_user_level, upsert_user
 from bot.keyboards import LEVELS, user_level_kb
 
 router = Router()
@@ -71,6 +71,59 @@ async def choose_level(call: CallbackQuery, session_factory):
 
     await call.message.answer(f"Great! You chose <b>{LEVELS[level]}</b>.\n\nGreat! See you on December 29th! 🎄")
     await call.answer("Сохранено ✅")
+
+
+async def _deliver_post_to_chat(message: Message, post) -> None:
+    media_type = (getattr(post, "media_type", None) or "").strip().lower()
+    file_id = getattr(post, "file_id", None)
+    text = getattr(post, "text", "") or ""
+
+    if not media_type or not file_id:
+        await message.answer(text)
+        return
+
+    if media_type == "photo":
+        await message.answer_photo(photo=file_id, caption=text)
+        return
+    if media_type == "video":
+        await message.answer_video(video=file_id, caption=text)
+        return
+    if media_type == "document":
+        await message.answer_document(document=file_id, caption=text)
+        return
+    if media_type == "audio":
+        await message.answer_audio(audio=file_id, caption=text)
+        return
+    if media_type == "voice":
+        await message.answer_voice(voice=file_id, caption=text)
+        return
+    if media_type == "video_note":
+        await message.answer_video_note(video_note=file_id)
+        if text.strip():
+            await message.answer(text)
+        return
+
+    await message.answer(text)
+
+
+@router.callback_query(F.data.startswith("openpost:"))
+async def open_post_callback(call: CallbackQuery, session_factory):
+    post_id = int(call.data.split(":", 1)[1])
+    db = session_factory()
+    try:
+        post = get_post(db, post_id)
+    finally:
+        db.close()
+    if not post:
+        await call.answer("Пост не найден", show_alert=True)
+        return
+    # remove button
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+    await _deliver_post_to_chat(call.message, post)
+    await call.answer()
 
 
 class NotCommand(BaseFilter):

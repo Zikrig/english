@@ -18,8 +18,15 @@ POST_LEVELS = {
 def admin_menu_kb() -> InlineKeyboardMarkup:
     kb = InlineKeyboardBuilder()
     kb.row(InlineKeyboardButton(text="➕ Создать пост", callback_data="admin:create"))
+    kb.row(InlineKeyboardButton(text="🎁 Сюрприз (кнопка Открыть)", callback_data="admin:teaser"))
     kb.row(InlineKeyboardButton(text="🗓 Посты по датам", callback_data="admin:dates"))
     kb.row(InlineKeyboardButton(text="🎚 Посты по уровням", callback_data="admin:levels"))
+    return kb.as_markup()
+
+
+def open_post_kb(post_id: int) -> InlineKeyboardMarkup:
+    kb = InlineKeyboardBuilder()
+    kb.row(InlineKeyboardButton(text="Открыть", callback_data=f"openpost:{post_id}"))
     return kb.as_markup()
 
 
