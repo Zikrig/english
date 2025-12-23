@@ -42,7 +42,7 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
         sent_count = 0
         for user in users:
             try:
-                await bot.send_message(chat_id=user.telegram_id, text=post.text)
+                await _deliver_post_to_user(bot, user.telegram_id, post)
                 sent_count += 1
                 await asyncio.sleep(0.04)
             except TelegramRetryAfter as e:
@@ -63,6 +63,42 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
     finally:
         db.close()
 
+
+async def _deliver_post_to_user(bot: Bot, chat_id: int, post: Post) -> None:
+    """
+    Send a post with optional media (stored as Telegram file_id).
+    Supported: photo/video/document/audio/voice/video_note; otherwise fall back to text.
+    """
+    media_type = (post.media_type or "").strip().lower()
+    file_id = post.file_id
+    text = post.text or ""
+
+    if not media_type or not file_id:
+        await bot.send_message(chat_id=chat_id, text=text)
+        return
+
+    if media_type == "photo":
+        await bot.send_photo(chat_id=chat_id, photo=file_id, caption=text)
+        return
+    if media_type == "video":
+        await bot.send_video(chat_id=chat_id, video=file_id, caption=text)
+        return
+    if media_type == "document":
+        await bot.send_document(chat_id=chat_id, document=file_id, caption=text)
+        return
+    if media_type == "audio":
+        await bot.send_audio(chat_id=chat_id, audio=file_id, caption=text)
+        return
+    if media_type == "voice":
+        await bot.send_voice(chat_id=chat_id, voice=file_id, caption=text)
+        return
+    if media_type == "video_note":
+        await bot.send_video_note(chat_id=chat_id, video_note=file_id)
+        if text.strip():
+            await bot.send_message(chat_id=chat_id, text=text)
+        return
+
+    await bot.send_message(chat_id=chat_id, text=text)
 
 async def _notify_admins_summary(bot: Bot, *, post_id: int, post_level: str, delivered: int, total: int) -> None:
     """

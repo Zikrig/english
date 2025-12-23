@@ -30,6 +30,8 @@ class Post(Base):
     title: Mapped[str] = mapped_column(String(120), default="", nullable=False)
     level: Mapped[PostLevel] = mapped_column(String(20), default="all", nullable=False, index=True)
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    media_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True, index=True)
+    file_id: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     send_at: Mapped[dt.datetime] = mapped_column(DateTime(), nullable=False, index=True)
     sent: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     sent_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(), nullable=True)
@@ -62,7 +64,7 @@ def init_db(engine) -> None:
 
             # posts
             posts_cols = table_columns("posts")
-            expected_posts = {"id", "title", "level", "text", "send_at", "sent", "sent_at", "created_at", "updated_at"}
+            expected_posts = {"id", "title", "level", "text", "media_type", "file_id", "send_at", "sent", "sent_at", "created_at", "updated_at"}
             if posts_cols and not expected_posts.issubset(posts_cols):
                 conn.exec_driver_sql("DROP TABLE IF EXISTS posts")
 
@@ -115,7 +117,7 @@ def count_users(db: Session) -> int:
 
 
 def create_post(db: Session, title: str, text: str, send_at: dt.datetime, level: PostLevel = "all") -> Post:
-    post = Post(title=title.strip(), text=text, send_at=send_at, level=level, sent=False)
+    post = Post(title=title.strip(), text=text, send_at=send_at, level=level, sent=False, media_type=None, file_id=None)
     db.add(post)
     db.commit()
     return post
@@ -189,6 +191,25 @@ def update_post_text_title(db: Session, post_id: int, *, title: Optional[str] = 
         post.title = title.strip()
     if text is not None:
         post.text = text
+    post.updated_at = dt.datetime.now()
+    db.commit()
+    return post
+
+
+def update_post_content(
+    db: Session,
+    post_id: int,
+    *,
+    text: str,
+    media_type: Optional[str],
+    file_id: Optional[str],
+) -> Optional[Post]:
+    post = get_post(db, post_id)
+    if not post:
+        return None
+    post.text = text
+    post.media_type = media_type
+    post.file_id = file_id
     post.updated_at = dt.datetime.now()
     db.commit()
     return post

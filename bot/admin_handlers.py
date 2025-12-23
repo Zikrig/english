@@ -16,6 +16,7 @@ from bot.db import (
     count_posts_by_date,
     count_posts_by_level,
     update_post_level,
+    update_post_content,
     update_post_send_time,
     update_post_text_title,
 )
@@ -36,6 +37,30 @@ admin_router = Router()
 
 PAGE_SIZE = 10
 
+
+def _extract_message_content(message: Message) -> tuple[str, str | None, str | None]:
+    """
+    Extract text/caption (as HTML) + media type + Telegram file_id from a message.
+    """
+    html_text = getattr(message, "html_text", None)
+    html_caption = getattr(message, "html_caption", None) or getattr(message, "caption_html", None)
+    text = html_text or html_caption or message.text or message.caption or ""
+
+    if message.photo:
+        return text, "photo", message.photo[-1].file_id
+    if message.video:
+        return text, "video", message.video.file_id
+    if message.voice:
+        return text, "voice", message.voice.file_id
+    if message.video_note:
+        return text, "video_note", message.video_note.file_id
+    if message.audio:
+        return text, "audio", message.audio.file_id
+    if message.document:
+        return text, "document", message.document.file_id
+
+    return text, None, None
+
 def _is_admin(user_id: int | None, settings: Settings) -> bool:
     return bool(user_id) and user_id in settings.admin_ids
 
@@ -43,7 +68,7 @@ def _is_admin(user_id: int | None, settings: Settings) -> bool:
 class CreatePostFSM(StatesGroup):
     title = State()
     level = State()
-    text = State()
+    content = State()
     send_at = State()
 
 
@@ -52,6 +77,7 @@ class EditPostFSM(StatesGroup):
     level = State()
     text = State()
     send_at = State()
+    content = State()
 
 
 @admin_router.message(Command("admin"))
@@ -253,21 +279,23 @@ async def create_pick_level(call: CallbackQuery, settings: Settings, state: FSMC
         await call.answer("Неизвестный уровень", show_alert=True)
         return
     await state.update_data(level=level)
-    await state.set_state(CreatePostFSM.text)
-    await call.message.edit_text(f"Ок, уровень: <b>{level}</b>\n\nТеперь отправьте <b>текст</b> поста:")
+    await state.set_state(CreatePostFSM.content)
+    await call.message.edit_text(
+        f"Ок, уровень: <b>{level}</b>\n\n"
+        "Теперь отправьте <b>сообщение поста</b> (текст / фото / видео / кружочек / аудио / голос):"
+    )
     await call.answer()
 
 
-@admin_router.message(CreatePostFSM.text)
-async def create_text(message: Message, state: FSMContext, settings: Settings):
+@admin_router.message(CreatePostFSM.content)
+async def create_content(message: Message, state: FSMContext, settings: Settings):
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
         return
-    # Preserve Telegram formatting: store HTML-rendered text (entities -> HTML)
-    text = message.html_text or message.text or ""
-    if not text.strip():
-        await message.answer("Текст не должен быть пустым. Отправьте текст ещё раз:")
+    text, media_type, file_id = _extract_message_content(message)
+    if not text.strip() and not file_id:
+        await message.answer("Сообщение пустое. Пришлите текст или медиа ещё раз:")
         return
-    await state.update_data(text=text)
+    await state.update_data(text=text, media_type=media_type, file_id=file_id)
     await state.set_state(CreatePostFSM.send_at)
     await message.answer(
         "Введите <b>время отправки</b> в формате:\n"
@@ -290,10 +318,13 @@ async def create_send_at(message: Message, state: FSMContext, settings: Settings
     title = data["title"]
     text = data["text"]
     level = data.get("level", "all")
+    media_type = data.get("media_type")
+    file_id = data.get("file_id")
 
     db = session_factory()
     try:
         post = create_post(db, title=title, text=text, send_at=send_at, level=level)
+        post = update_post_content(db, post.id, text=text, media_type=media_type, file_id=file_id) or post
     finally:
         db.close()
 
@@ -329,10 +360,12 @@ async def open_post(call: CallbackQuery, settings: Settings, session_factory):
         return
 
     status = "✅ отправлен" if post.sent else "🕒 ожидает"
+    media = (post.media_type or "text")
     await call.message.edit_text(
         f"<b>Пост #{post.id}</b> ({status})\n"
         f"⏰ {format_dt(post.send_at, settings.tz)}\n"
         f"🎚 {post.level}\n"
+        f"📎 {media}\n"
         f"📝 <b>{post.title or '(без названия)'}</b>\n\n"
         f"{post.text}",
         reply_markup=post_actions_kb(post.id, back_cb=back_cb),
@@ -379,9 +412,12 @@ async def post_action(call: CallbackQuery, settings: Settings, state: FSMContext
     elif action == "level":
         await state.set_state(EditPostFSM.level)
         await call.message.edit_text("Выберите новый <b>уровень</b> для поста:", reply_markup=admin_post_level_kb())
+    elif action == "content":
+        await state.set_state(EditPostFSM.content)
+        await call.message.edit_text("Пришлите новое <b>сообщение поста</b> (текст / фото / видео / кружочек / аудио / голос):")
     elif action == "text":
         await state.set_state(EditPostFSM.text)
-        await call.message.edit_text("Введите новый <b>текст</b> поста:")
+        await call.message.edit_text("Введите новый <b>текст/подпись</b> поста (для медиа это будет caption):")
     elif action == "time":
         await state.set_state(EditPostFSM.send_at)
         await call.message.edit_text(
@@ -481,6 +517,36 @@ async def edit_text(message: Message, state: FSMContext, settings: Settings, ses
         await message.answer(
             f"<b>Пост #{post.id}</b>\n"
             f"⏰ {format_dt(post.send_at, settings.tz)}\n"
+            f"📝 <b>{post.title or '(без названия)'}</b>\n\n"
+            f"{post.text}",
+            reply_markup=post_actions_kb(post.id),
+        )
+
+
+@admin_router.message(EditPostFSM.content)
+async def edit_content(message: Message, state: FSMContext, settings: Settings, session_factory):
+    if not _is_admin(message.from_user.id if message.from_user else None, settings):
+        return
+    text, media_type, file_id = _extract_message_content(message)
+    if not text.strip() and not file_id:
+        await message.answer("Сообщение пустое. Пришлите текст или медиа ещё раз:")
+        return
+    data = await state.get_data()
+    post_id = int(data["post_id"])
+    db = session_factory()
+    try:
+        post = update_post_content(db, post_id, text=text, media_type=media_type, file_id=file_id)
+    finally:
+        db.close()
+    await state.clear()
+    await message.answer("✅ Контент обновлён.")
+    if post:
+        media = post.media_type or "text"
+        await message.answer(
+            f"<b>Пост #{post.id}</b>\n"
+            f"⏰ {format_dt(post.send_at, settings.tz)}\n"
+            f"🎚 {post.level}\n"
+            f"📎 {media}\n"
             f"📝 <b>{post.title or '(без названия)'}</b>\n\n"
             f"{post.text}",
             reply_markup=post_actions_kb(post.id),
