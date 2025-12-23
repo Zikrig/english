@@ -95,11 +95,12 @@ async def forward_non_admin_messages_to_admins(message: Message, settings: Setti
 
     # hashtags for each forwarded message (requested format)
     today = dt.datetime.now(ZoneInfo(settings.tz)).date().isoformat()  # YYYY-MM-DD
+    today = today.replace("-", "_")
     tags = f"#{today} #tg{message.from_user.id}"
     if message.from_user.username:
         nick = re.sub(r"[^0-9A-Za-z_]", "_", message.from_user.username).strip("_")
         if nick:
-            tags += f" #nick_{nick}"
+            tags += f" @{nick}"
 
     for admin_id in settings.admin_ids:
         try:
