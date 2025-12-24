@@ -79,7 +79,7 @@ async def choose_level(call: CallbackQuery, session_factory):
     finally:
         db.close()
 
-    await call.message.answer(f"Great! You chose <b>{LEVELS[level]}</b>.\n\nGreat! See you on December 29th! 🎄")
+    await call.message.answer(f"Great! You chose <b>{LEVELS[level]}</b>.\n\nSee you on December 29th! 🎄")
     await call.answer("Сохранено ✅")
 
 
