@@ -31,24 +31,34 @@ async def cmd_start(message: Message, session_factory):
 
     # Day 0 intro + level selection
     await message.answer(
-        "🎄 <b>New Year English Challenge with Angie</b>\n\n"
-        "Hello, holiday star! Welcome to the New Year English Challenge 🎄\n"
-        "It’s my New Year present for you, I want to make your New Year holidays fun, festive and meaningful in terms of English.\n"
-        "Hope you’ll enjoy it as much as I enjoyed creating it for you!\n\n"
-        "Добро пожаловать в новогодний English-челлендж!"
+        """🎄 <b>New Year English Challenge with Angie</b>
+
+Добро пожаловать в новогодний English-челлендж!
+
+Hello, holiday star! 🌟
+Welcome to the New Year English Challenge with Angie🎄
+It’s my New Year present for you! 🎁
+
+I want your holidays to be fun, festive and useful for your English.
+Hope you’ll enjoy it as much as I enjoyed creating it for you!☺️"""
     )
     await asyncio.sleep(3)
     await message.answer(
-        "✨ <b>Как всё устроено</b>\n\n"
-        "Our challenge starts on December 29th, you’ll get the 1st little new year task.\n\n"
-        "✨ One small task a day (29 Dec – 7 Jan)\n"
-        "✨ Одно небольшое задание в день (29 декабря – 7 января)\n\n"
-        "✨ Complete all tasks by 10 January, 12:00.\n"
-        "✨ Выполните все задания до 10 января, 10:00\n\n"
-        "✨ English only\n"
-        "✨ Отвечаем на английском, как можем:)\n\n"
-        "✨ Fun, practice and holiday mood 💙\n"
-        "✨ Практика, радость и праздничное настроение 💙"
+        """✨ <b>Как всё устроено</b>
+
+Челлендж начинается <b>29 декабря</b> и продолжается до <b>7 января</b>. Каждый день ты будешь получать от меня маленькое задание или приятное новогоднее сообщение💙 и, конечно, будут подарки!🎁
+
+✨ Всего челлендж длится <b>10 дней</b>
+✨ В нём будет <b>8 заданий</b>. English only! Отвечаем только на английском, как можем :) 
+✨ Я разыграю <b>3 новогодних подарка</b> для вашего английского
+✨ <b>Чтобы участвовать в розыгрыше</b>, нужно:
+• <b>выполнить все задания</b>
+• <b>быть моим учеником</b>🧤🫶
+✨ У вас будет почти <b>две недели</b> на выполнение: выполните все задания до 10 января, 12:00
+✨ Итоги я подведу <b>11-12 января</b>
+
+Получается такой  небольшой новогодний адвент к православному Рождеству 🎄с практикой английского, теплом и подарками 🎀
+        """
     )
     await asyncio.sleep(3)
     await message.answer("Before we start, please choose your level 👇", reply_markup=user_level_kb())
