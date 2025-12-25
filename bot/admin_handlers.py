@@ -1,3 +1,5 @@
+import asyncio
+
 from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -10,6 +12,7 @@ from bot.db import (
     create_post,
     delete_post,
     get_post,
+    get_post_media,
     get_post_dates,
     get_posts_by_date,
     get_posts_by_level,
@@ -38,6 +41,119 @@ from bot.time_utils import format_dt, parse_moscow_datetime
 admin_router = Router()
 
 PAGE_SIZE = 10
+
+# --- Media group buffering (albums) ---
+# Telegram delivers media groups as multiple updates with the same media_group_id.
+# We collect them and "finalize" after a short debounce without requiring /done_media.
+_album_tasks: dict[tuple[int, str], asyncio.Task] = {}
+
+
+def _album_key(message: Message, fsm_state: str) -> tuple[int, str] | None:
+    if not message.from_user:
+        return None
+    return (int(message.from_user.id), fsm_state)
+
+
+async def _schedule_album_finalize(
+    *,
+    key: tuple[int, str],
+    state: FSMContext,
+    delay_sec: float,
+    finalize_coro,
+) -> None:
+    # cancel previous task (if any)
+    prev = _album_tasks.get(key)
+    if prev and not prev.done():
+        prev.cancel()
+
+    async def _runner():
+        try:
+            await asyncio.sleep(delay_sec)
+            await finalize_coro()
+        except asyncio.CancelledError:
+            return
+
+    _album_tasks[key] = asyncio.create_task(_runner())
+
+
+def _draft_kb(*, has_text: bool, has_media: bool):
+    """
+    Черновик при создании поста:
+    - Медиа / Текст / ГОТОВО | назад
+    Слева ✅ если заполнено.
+    """
+    from aiogram.types import InlineKeyboardButton
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+    kb = InlineKeyboardBuilder()
+    kb.row(
+        InlineKeyboardButton(text=f"{'✅ ' if has_media else ''}Медиа", callback_data="cdraft:media"),
+        InlineKeyboardButton(text=f"{'✅ ' if has_text else ''}Текст", callback_data="cdraft:text"),
+    )
+    kb.row(
+        InlineKeyboardButton(text="✅ ГОТОВО", callback_data="cdraft:done"),
+        InlineKeyboardButton(text="⬅️ Назад", callback_data="cdraft:back"),
+    )
+    return kb.as_markup()
+
+
+async def _render_create_draft(message: Message, state: FSMContext, settings: "Settings") -> None:
+    """
+    Рисует/перерисовывает черновик (одно сообщение) + кнопки.
+    """
+    data = await state.get_data()
+    title = (data.get("title") or "").strip() or "(без названия)"
+    level = data.get("level", "all")
+    text = data.get("draft_text") or ""
+    media_type = data.get("draft_media_type")
+    file_id = data.get("draft_file_id")
+    media_group = data.get("draft_media_group") or []
+
+    has_text = bool(text.strip())
+    has_media = bool(media_group) or bool(media_type and file_id)
+
+    media_label = "нет"
+    if media_group:
+        media_label = f"альбом ({len(media_group)} шт.)"
+    elif media_type and file_id:
+        media_label = media_type
+
+    preview = text.strip()
+    if len(preview) > 600:
+        preview = preview[:600] + "…"
+    if not preview:
+        preview = "(текста нет)"
+
+    body = (
+        "📝 <b>Черновик поста</b>\n\n"
+        f"🗂 <b>{title}</b>\n"
+        f"🎚 <b>{level}</b>\n"
+        f"📎 <b>Медиа</b>: {media_label}\n"
+        f"✏️ <b>Текст</b>: {'есть' if has_text else 'нет'}\n\n"
+        f"{preview}"
+    )
+
+    # remember draft message to edit in-place
+    draft_chat_id = data.get("draft_chat_id")
+    draft_message_id = data.get("draft_message_id")
+    kb = _draft_kb(has_text=has_text, has_media=has_media)
+
+    if draft_chat_id and draft_message_id:
+        try:
+            await message.bot.edit_message_text(
+                chat_id=draft_chat_id,
+                message_id=draft_message_id,
+                text=body,
+                reply_markup=kb,
+                disable_web_page_preview=True,
+            )
+            return
+        except Exception:
+            # fall back to sending a new draft message
+            pass
+
+    sent = await message.answer(body, reply_markup=kb, disable_web_page_preview=True)
+    await state.update_data(draft_chat_id=sent.chat.id, draft_message_id=sent.message_id)
 
 
 def _extract_message_content(message: Message) -> tuple[str, str | None, str | None]:
@@ -106,7 +222,9 @@ def _is_admin(user_id: int | None, settings: Settings) -> bool:
 class CreatePostFSM(StatesGroup):
     title = State()
     level = State()
-    content = State()
+    draft = State()
+    edit_text = State()
+    edit_media = State()
     send_at = State()
 
 
@@ -360,29 +478,145 @@ async def create_pick_level(call: CallbackQuery, settings: Settings, state: FSMC
         await call.answer("Неизвестный уровень", show_alert=True)
         return
     await state.update_data(level=level)
-    await state.set_state(CreatePostFSM.content)
-    await call.message.edit_text(
-        f"Ок, уровень: <b>{level}</b>\n\n"
-        "Теперь отправьте <b>сообщение поста</b> (текст / фото / видео / кружочек / аудио / голос):"
+    # init empty draft
+    await state.update_data(
+        draft_text="",
+        draft_media_type=None,
+        draft_file_id=None,
+        draft_media_group=None,
+        album_id=None,
+        album_items=None,
+        draft_chat_id=None,
+        draft_message_id=None,
     )
+    await state.set_state(CreatePostFSM.draft)
+    # show draft (as separate message) to keep UI stable
+    await _render_create_draft(call.message, state, settings)
+    # hide previous inline keyboard if possible
+    try:
+        await call.message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
     await call.answer()
 
 
-@admin_router.message(CreatePostFSM.content)
-async def create_content(message: Message, state: FSMContext, settings: Settings):
+@admin_router.callback_query(F.data.startswith("cdraft:"), CreatePostFSM.draft)
+async def create_draft_actions(call: CallbackQuery, settings: Settings, state: FSMContext):
+    if not _is_admin(call.from_user.id, settings):
+        await call.answer("Нет доступа", show_alert=True)
+        return
+    action = call.data.split(":", 1)[1]
+
+    if action == "back":
+        await state.clear()
+        await call.message.edit_text("Админ-панель:", reply_markup=admin_menu_kb())
+        await call.answer()
+        return
+
+    if action == "text":
+        await state.set_state(CreatePostFSM.edit_text)
+        await call.message.answer("Отправьте текст поста (с разметкой Telegram):")
+        await call.answer()
+        return
+
+    if action == "media":
+        await state.set_state(CreatePostFSM.edit_media)
+        await call.message.answer("Отправьте медиа: одно фото/видео/аудио/документ/voice/кружок или альбом фото+видео.")
+        await call.answer()
+        return
+
+    if action == "done":
+        data = await state.get_data()
+        text = (data.get("draft_text") or "").strip()
+        has_media = bool(data.get("draft_media_group")) or bool(data.get("draft_media_type") and data.get("draft_file_id"))
+        if not text and not has_media:
+            await call.answer("Нужно заполнить Текст или Медиа", show_alert=True)
+            return
+        await state.set_state(CreatePostFSM.send_at)
+        await call.message.answer(
+            "Введите <b>время отправки</b> в формате:\n"
+            "<code>YYYY-MM-DD HH:MM</code>\n\n"
+            f"Часовой пояс: <b>{settings.tz}</b>"
+        )
+        await call.answer()
+        return
+
+    await call.answer()
+
+
+@admin_router.message(CreatePostFSM.edit_text)
+async def create_set_text(message: Message, state: FSMContext, settings: Settings):
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
         return
-    text, media_type, file_id = _extract_message_content(message)
-    if not text.strip() and not file_id:
-        await message.answer("Сообщение пустое. Пришлите текст или медиа ещё раз:")
+    txt = (getattr(message, "html_text", None) or getattr(message, "html_caption", None) or message.text or message.caption or "").strip()
+    if not txt:
+        await message.answer("Текст пустой. Пришлите ещё раз:")
         return
-    await state.update_data(text=text, media_type=media_type, file_id=file_id)
-    await state.set_state(CreatePostFSM.send_at)
-    await message.answer(
-        "Введите <b>время отправки</b> в формате:\n"
-        "<code>YYYY-MM-DD HH:MM</code>\n\n"
-        f"Часовой пояс: <b>{settings.tz}</b>"
+    await state.update_data(draft_text=txt)
+    await state.set_state(CreatePostFSM.draft)
+    await _render_create_draft(message, state, settings)
+
+
+@admin_router.message(CreatePostFSM.edit_media)
+async def create_set_media(message: Message, state: FSMContext, settings: Settings):
+    if not _is_admin(message.from_user.id if message.from_user else None, settings):
+        return
+
+    # album (photos/videos only)
+    if message.media_group_id and (message.photo or message.video):
+        data = await state.get_data()
+        album_id = data.get("album_id")
+        album_items = list(data.get("album_items") or [])
+        if album_id and album_id != message.media_group_id:
+            # allow only one album at a time
+            await message.answer("Вы отправляете новый альбом. Подождите пару секунд, пока сохранится предыдущий.")
+            return
+        if not album_id:
+            album_id = message.media_group_id
+
+        if message.photo:
+            album_items.append(("photo", message.photo[-1].file_id))
+        elif message.video:
+            album_items.append(("video", message.video.file_id))
+
+        await state.update_data(album_id=album_id, album_items=album_items)
+
+        key = _album_key(message, "CreatePostFSM.edit_media")
+        if key:
+            async def _finalize():
+                d = await state.get_data()
+                if d.get("album_id") != album_id:
+                    return
+                items = list(d.get("album_items") or [])
+                if not items:
+                    return
+                await state.update_data(
+                    draft_media_group=items,
+                    draft_media_type=None,
+                    draft_file_id=None,
+                    album_id=None,
+                    album_items=None,
+                )
+                await state.set_state(CreatePostFSM.draft)
+                await _render_create_draft(message, state, settings)
+
+            await _schedule_album_finalize(key=key, state=state, delay_sec=1.2, finalize_coro=_finalize)
+        return
+
+    # single media (any supported type)
+    _text, media_type, file_id = _extract_message_content(message)
+    if not media_type or not file_id:
+        await message.answer("Не вижу медиа. Пришлите фото/видео/аудио/документ/voice/кружок или альбом.")
+        return
+    await state.update_data(
+        draft_media_type=media_type,
+        draft_file_id=file_id,
+        draft_media_group=None,
+        album_id=None,
+        album_items=None,
     )
+    await state.set_state(CreatePostFSM.draft)
+    await _render_create_draft(message, state, settings)
 
 
 @admin_router.message(CreatePostFSM.send_at)
@@ -397,15 +631,21 @@ async def create_send_at(message: Message, state: FSMContext, settings: Settings
 
     data = await state.get_data()
     title = data["title"]
-    text = data["text"]
+    text = data.get("draft_text") or ""
     level = data.get("level", "all")
-    media_type = data.get("media_type")
-    file_id = data.get("file_id")
+    media_type = data.get("draft_media_type")
+    file_id = data.get("draft_file_id")
+    media_group = data.get("draft_media_group")
+
+    # Validate: post must have either text or some media (single or media group)
+    if not text.strip() and not file_id and not media_group:
+        await message.answer("Пост пустой. Пришлите текст или медиа (фото/видео/альбом) и попробуйте снова.")
+        return
 
     db = session_factory()
     try:
         post = create_post(db, title=title, text=text, send_at=send_at, level=level)
-        post = update_post_content(db, post.id, text=text, media_type=media_type, file_id=file_id) or post
+        post = update_post_content(db, post.id, text=text, media_type=media_type, file_id=file_id, media_group=media_group) or post
     finally:
         db.close()
 
@@ -434,6 +674,7 @@ async def open_post(call: CallbackQuery, settings: Settings, session_factory):
     db = session_factory()
     try:
         post = get_post(db, post_id)
+        media_items = get_post_media(db, post_id)
     finally:
         db.close()
     if not post:
@@ -441,7 +682,7 @@ async def open_post(call: CallbackQuery, settings: Settings, session_factory):
         return
 
     status = "✅ отправлен" if post.sent else "🕒 ожидает"
-    media = (post.media_type or "text")
+    media = ("media_group" if media_items else (post.media_type or "text"))
     await call.message.edit_text(
         f"<b>Пост #{post.id}</b> ({status})\n"
         f"⏰ {format_dt(post.send_at, settings.tz)}\n"
@@ -453,7 +694,38 @@ async def open_post(call: CallbackQuery, settings: Settings, session_factory):
     )
     # Send media preview (photo/video/voice/video_note/etc) as separate message
     try:
-        await _send_post_preview(call.message, post)
+        if media_items:
+            from aiogram.enums import ParseMode
+            from aiogram.types import InputMediaPhoto, InputMediaVideo
+
+            text = post.text or ""
+            caption = text if len(text) <= 1024 else ""
+            tail_text = "" if caption else text
+
+            album = []
+            for idx, item in enumerate(media_items):
+                if item.media_type == "photo":
+                    album.append(
+                        InputMediaPhoto(
+                            media=item.file_id,
+                            caption=caption if idx == 0 else None,
+                            parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                        )
+                    )
+                elif item.media_type == "video":
+                    album.append(
+                        InputMediaVideo(
+                            media=item.file_id,
+                            caption=caption if idx == 0 else None,
+                            parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                        )
+                    )
+            if album:
+                await call.message.bot.send_media_group(chat_id=call.message.chat.id, media=album)
+                if tail_text.strip():
+                    await call.message.answer(tail_text)
+        else:
+            await _send_post_preview(call.message, post)
     except Exception:
         pass
     await call.answer()
@@ -613,6 +885,73 @@ async def edit_text(message: Message, state: FSMContext, settings: Settings, ses
 async def edit_content(message: Message, state: FSMContext, settings: Settings, session_factory):
     if not _is_admin(message.from_user.id if message.from_user else None, settings):
         return
+    # Media group (album): collect photo/video items and finalize automatically after debounce
+    if message.media_group_id and (message.photo or message.video):
+        data = await state.get_data()
+        album_id = data.get("album_id")
+        album_items = list(data.get("album_items") or [])
+
+        if album_id and album_id != message.media_group_id:
+            await message.answer("Вы начали новый альбом. Дождитесь завершения предыдущего (пару секунд) и попробуйте снова.")
+            return
+
+        if not album_id:
+            album_id = message.media_group_id
+
+        caption_html = (
+            getattr(message, "html_caption", None)
+            or getattr(message, "caption_html", None)
+            or message.caption
+            or ""
+        )
+        if caption_html.strip() and not (data.get("text") or "").strip():
+            await state.update_data(text=caption_html)
+
+        if message.photo:
+            album_items.append(("photo", message.photo[-1].file_id))
+        elif message.video:
+            album_items.append(("video", message.video.file_id))
+
+        await state.update_data(album_id=album_id, album_items=album_items)
+        if len(album_items) == 1:
+            await message.answer("✅ Альбом получаю… сейчас соберу все элементы и сохраню в пост.")
+
+        key = _album_key(message, "EditPostFSM.content")
+        if key:
+            async def _finalize():
+                d = await state.get_data()
+                if d.get("album_id") != album_id:
+                    return
+                post_id = int(d["post_id"])
+                items = list(d.get("album_items") or [])
+                text = d.get("text") or ""
+                if not items:
+                    return
+
+                db = session_factory()
+                try:
+                    post = update_post_content(db, post_id, text=text, media_type=None, file_id=None, media_group=items)
+                    media_items = get_post_media(db, post_id)
+                finally:
+                    db.close()
+
+                await state.clear()
+                await message.answer("✅ Контент обновлён (медиагруппа).")
+                if post:
+                    await message.answer(
+                        f"<b>Пост #{post.id}</b>\n"
+                        f"⏰ {format_dt(post.send_at, settings.tz)}\n"
+                        f"🎚 {post.level}\n"
+                        f"📎 media_group\n"
+                        f"📝 <b>{post.title or '(без названия)'}</b>\n\n"
+                        f"{post.text}",
+                        reply_markup=post_actions_kb(post.id),
+                    )
+
+            await _schedule_album_finalize(key=key, state=state, delay_sec=1.2, finalize_coro=_finalize)
+            return
+
+    # Single message: update immediately
     text, media_type, file_id = _extract_message_content(message)
     if not text.strip() and not file_id:
         await message.answer("Сообщение пустое. Пришлите текст или медиа ещё раз:")
@@ -621,13 +960,14 @@ async def edit_content(message: Message, state: FSMContext, settings: Settings, 
     post_id = int(data["post_id"])
     db = session_factory()
     try:
-        post = update_post_content(db, post_id, text=text, media_type=media_type, file_id=file_id)
+        post = update_post_content(db, post_id, text=text, media_type=media_type, file_id=file_id, media_group=None)
+        media_items = get_post_media(db, post_id)
     finally:
         db.close()
     await state.clear()
     await message.answer("✅ Контент обновлён.")
     if post:
-        media = post.media_type or "text"
+        media = "media_group" if media_items else (post.media_type or "text")
         await message.answer(
             f"<b>Пост #{post.id}</b>\n"
             f"⏰ {format_dt(post.send_at, settings.tz)}\n"
@@ -638,7 +978,25 @@ async def edit_content(message: Message, state: FSMContext, settings: Settings, 
             reply_markup=post_actions_kb(post.id),
         )
         try:
-            await _send_post_preview(message, post)
+            if media_items:
+                from aiogram.enums import ParseMode
+                from aiogram.types import InputMediaPhoto, InputMediaVideo
+
+                t = post.text or ""
+                caption = t if len(t) <= 1024 else ""
+                tail_text = "" if caption else t
+                album = []
+                for idx, item in enumerate(media_items):
+                    if item.media_type == "photo":
+                        album.append(InputMediaPhoto(media=item.file_id, caption=caption if idx == 0 else None, parse_mode=ParseMode.HTML if idx == 0 and caption else None))
+                    elif item.media_type == "video":
+                        album.append(InputMediaVideo(media=item.file_id, caption=caption if idx == 0 else None, parse_mode=ParseMode.HTML if idx == 0 and caption else None))
+                if album:
+                    await message.bot.send_media_group(chat_id=message.chat.id, media=album)
+                    if tail_text.strip():
+                        await message.answer(tail_text)
+            else:
+                await _send_post_preview(message, post)
         except Exception:
             pass
 

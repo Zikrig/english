@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 import re
 
 from bot.config import Settings
-from bot.db import get_post, set_user_level, upsert_user
+from bot.db import get_post, get_post_media, set_user_level, upsert_user
 from bot.keyboards import LEVELS, user_level_kb
 
 router = Router()
@@ -83,10 +83,44 @@ async def choose_level(call: CallbackQuery, session_factory):
     await call.answer("Сохранено ✅")
 
 
-async def _deliver_post_to_chat(message: Message, post) -> None:
+async def _deliver_post_to_chat(message: Message, post, media_items) -> None:
     media_type = (getattr(post, "media_type", None) or "").strip().lower()
     file_id = getattr(post, "file_id", None)
     text = getattr(post, "text", "") or ""
+
+    # Media group has priority
+    if media_items:
+        from aiogram.enums import ParseMode
+        from aiogram.types import InputMediaPhoto, InputMediaVideo
+
+        caption = text if len(text) <= 1024 else ""
+        tail_text = "" if caption else text
+
+        album = []
+        for idx, item in enumerate(media_items):
+            itype = (getattr(item, "media_type", "") or "").strip().lower()
+            if itype == "photo":
+                album.append(
+                    InputMediaPhoto(
+                        media=item.file_id,
+                        caption=caption if idx == 0 else None,
+                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                    )
+                )
+            elif itype == "video":
+                album.append(
+                    InputMediaVideo(
+                        media=item.file_id,
+                        caption=caption if idx == 0 else None,
+                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                    )
+                )
+
+        if album:
+            await message.bot.send_media_group(chat_id=message.chat.id, media=album)
+            if tail_text.strip():
+                await message.answer(tail_text)
+            return
 
     if not media_type or not file_id:
         await message.answer(text)
@@ -122,6 +156,7 @@ async def open_post_callback(call: CallbackQuery, session_factory):
     db = session_factory()
     try:
         post = get_post(db, post_id)
+        media_items = get_post_media(db, post_id)
     finally:
         db.close()
     if not post:
@@ -132,7 +167,7 @@ async def open_post_callback(call: CallbackQuery, session_factory):
         await call.message.edit_reply_markup(reply_markup=None)
     except Exception:
         pass
-    await _deliver_post_to_chat(call.message, post)
+    await _deliver_post_to_chat(call.message, post, media_items)
     await call.answer()
 
 

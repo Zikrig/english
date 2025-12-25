@@ -2,7 +2,18 @@ import datetime as dt
 import os
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, create_engine, select, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    create_engine,
+    select,
+    func,
+    delete,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
 
@@ -37,6 +48,23 @@ class Post(Base):
     sent_at: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime(), default=lambda: dt.datetime.now())
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime(), default=lambda: dt.datetime.now())
+
+
+class PostMedia(Base):
+    """
+    Media items attached to a post (supports media groups / albums).
+
+    We keep Post.media_type + Post.file_id for backward compatibility with single-media posts.
+    If PostMedia rows exist for a post, they take priority over Post.media_type/file_id.
+    """
+
+    __tablename__ = "post_media"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    post_id: Mapped[int] = mapped_column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), index=True, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(10), nullable=False)  # "photo" | "video"
+    file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True)
 
 
 class BroadcastSettings(Base):
@@ -90,6 +118,12 @@ def init_db(engine) -> None:
             if bs_cols and not expected_bs.issubset(bs_cols):
                 conn.exec_driver_sql("DROP TABLE IF EXISTS broadcast_settings")
 
+            # post_media (albums)
+            pm_cols = table_columns("post_media")
+            expected_pm = {"id", "post_id", "media_type", "file_id", "position"}
+            if pm_cols and not expected_pm.issubset(pm_cols):
+                conn.exec_driver_sql("DROP TABLE IF EXISTS post_media")
+
             conn.commit()
     except Exception:
         # don't block startup if PRAGMA isn't available (non-sqlite)
@@ -141,6 +175,24 @@ def create_post(db: Session, title: str, text: str, send_at: dt.datetime, level:
 
 def get_post(db: Session, post_id: int) -> Optional[Post]:
     return db.scalar(select(Post).where(Post.id == post_id))
+
+
+def get_post_media(db: Session, post_id: int) -> list[PostMedia]:
+    stmt = select(PostMedia).where(PostMedia.post_id == post_id).order_by(PostMedia.position.asc(), PostMedia.id.asc())
+    return list(db.scalars(stmt))
+
+
+def replace_post_media_group(db: Session, post_id: int, items: list[tuple[str, str]]) -> None:
+    """
+    Replace post media group with new items.
+    items: list of (media_type, file_id), where media_type is "photo" or "video".
+    """
+    # Clear existing album items
+    db.execute(delete(PostMedia).where(PostMedia.post_id == post_id))
+    # Insert new items
+    for idx, (media_type, file_id) in enumerate(items):
+        db.add(PostMedia(post_id=post_id, media_type=media_type, file_id=file_id, position=idx))
+    db.commit()
 
 
 def get_posts(db: Session, limit: int = 50) -> list[Post]:
@@ -239,11 +291,25 @@ def update_post_content(
     text: str,
     media_type: Optional[str],
     file_id: Optional[str],
+    media_group: Optional[list[tuple[str, str]]] = None,
 ) -> Optional[Post]:
     post = get_post(db, post_id)
     if not post:
         return None
     post.text = text
+    if media_group:
+        # Store as media group: clear single-media fields and write PostMedia items
+        post.media_type = None
+        post.file_id = None
+        post.updated_at = dt.datetime.now()
+        db.commit()
+        replace_post_media_group(db, post_id, media_group)
+        # Reload post in current session state
+        post = get_post(db, post_id)
+        return post
+
+    # Store as single media (or text-only): clear any existing album items
+    db.execute(delete(PostMedia).where(PostMedia.post_id == post_id))
     post.media_type = media_type
     post.file_id = file_id
     post.updated_at = dt.datetime.now()
@@ -277,6 +343,8 @@ def delete_post(db: Session, post_id: int) -> bool:
     post = get_post(db, post_id)
     if not post:
         return False
+    # Best-effort: remove album items too
+    db.execute(delete(PostMedia).where(PostMedia.post_id == post_id))
     db.delete(post)
     db.commit()
     return True

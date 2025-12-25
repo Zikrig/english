@@ -4,6 +4,8 @@ import logging
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError, TelegramRetryAfter
+from aiogram.enums import ParseMode
+from aiogram.types import InputMediaPhoto, InputMediaVideo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from sqlalchemy.orm import Session
@@ -13,6 +15,7 @@ from bot.db import (
     Post,
     get_all_users,
     get_post,
+    get_post_media,
     get_unsent_due_posts,
     get_unsent_future_posts,
     get_users_by_level,
@@ -36,6 +39,8 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
         if post.sent:
             return
 
+        media_items = get_post_media(db, post_id)
+
         # recipients
         admin_ids = [int(x) for x in (getattr(bot, "_admin_ids", []) or [])]
         if post.level == "admins":
@@ -58,7 +63,7 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
                 if teaser.teaser_text.strip() or teaser.teaser_file_id:
                     await _deliver_teaser_to_user(bot, chat_id, teaser, post_id=post.id)
                 else:
-                    await _deliver_post_to_user(bot, chat_id, post)
+                    await _deliver_post_to_user(bot, chat_id, post, media_items)
                 sent_count += 1
                 await asyncio.sleep(0.04)
             except TelegramRetryAfter as e:
@@ -80,41 +85,76 @@ async def _send_post(bot: Bot, session_factory, post_id: int, tz: str) -> None:
         db.close()
 
 
-async def _deliver_post_to_user(bot: Bot, chat_id: int, post: Post) -> None:
+async def _deliver_post_to_user(bot: Bot, chat_id: int, post: Post, media_items) -> None:
     """
     Send a post with optional media (stored as Telegram file_id).
-    Supported: photo/video/document/audio/voice/video_note; otherwise fall back to text.
+    Supported:
+    - media group (album) of photos/videos
+    - single: photo/video/document/audio/voice/video_note
+    Otherwise fall back to text.
     """
     media_type = (post.media_type or "").strip().lower()
     file_id = post.file_id
     text = post.text or ""
 
+    # Media group (album) has priority over single file_id
+    if media_items:
+        # Telegram caption limit is 1024 chars. If longer, send text separately.
+        caption = text if len(text) <= 1024 else ""
+        tail_text = "" if caption else text
+
+        album = []
+        for idx, item in enumerate(media_items):
+            itype = (getattr(item, "media_type", "") or "").strip().lower()
+            if itype == "photo":
+                album.append(
+                    InputMediaPhoto(
+                        media=item.file_id,
+                        caption=caption if idx == 0 else None,
+                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                    )
+                )
+            elif itype == "video":
+                album.append(
+                    InputMediaVideo(
+                        media=item.file_id,
+                        caption=caption if idx == 0 else None,
+                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                    )
+                )
+
+        if album:
+            await bot.send_media_group(chat_id=chat_id, media=album)
+            if tail_text.strip():
+                await bot.send_message(chat_id=chat_id, text=tail_text, parse_mode=ParseMode.HTML)
+            return
+
     if not media_type or not file_id:
-        await bot.send_message(chat_id=chat_id, text=text)
+        await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.HTML)
         return
 
     if media_type == "photo":
-        await bot.send_photo(chat_id=chat_id, photo=file_id, caption=text)
+        await bot.send_photo(chat_id=chat_id, photo=file_id, caption=text, parse_mode=ParseMode.HTML)
         return
     if media_type == "video":
-        await bot.send_video(chat_id=chat_id, video=file_id, caption=text)
+        await bot.send_video(chat_id=chat_id, video=file_id, caption=text, parse_mode=ParseMode.HTML)
         return
     if media_type == "document":
-        await bot.send_document(chat_id=chat_id, document=file_id, caption=text)
+        await bot.send_document(chat_id=chat_id, document=file_id, caption=text, parse_mode=ParseMode.HTML)
         return
     if media_type == "audio":
-        await bot.send_audio(chat_id=chat_id, audio=file_id, caption=text)
+        await bot.send_audio(chat_id=chat_id, audio=file_id, caption=text, parse_mode=ParseMode.HTML)
         return
     if media_type == "voice":
-        await bot.send_voice(chat_id=chat_id, voice=file_id, caption=text)
+        await bot.send_voice(chat_id=chat_id, voice=file_id, caption=text, parse_mode=ParseMode.HTML)
         return
     if media_type == "video_note":
         await bot.send_video_note(chat_id=chat_id, video_note=file_id)
         if text.strip():
-            await bot.send_message(chat_id=chat_id, text=text)
+            await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.HTML)
         return
 
-    await bot.send_message(chat_id=chat_id, text=text)
+    await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.HTML)
 
 
 async def _deliver_teaser_to_user(bot: Bot, chat_id: int, teaser, *, post_id: int) -> None:
