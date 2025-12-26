@@ -59,6 +59,7 @@ def post_actions_kb(post_id: int, *, back_cb: str = "admin:back") -> InlineKeybo
     kb.row(InlineKeyboardButton(text="🎚 Уровень", callback_data=f"pact:level:{post_id}"))
     kb.row(InlineKeyboardButton(text="📎 Контент", callback_data=f"pact:content:{post_id}"))
     kb.row(InlineKeyboardButton(text="✏️ Текст/подпись", callback_data=f"pact:text:{post_id}"))
+    kb.row(InlineKeyboardButton(text="🔊 Аудио", callback_data=f"pact:audio:{post_id}"))
     kb.row(InlineKeyboardButton(text="⏰ Время", callback_data=f"pact:time:{post_id}"))
     kb.row(InlineKeyboardButton(text="🗑 Удалить", callback_data=f"pact:del:{post_id}"))
     kb.row(InlineKeyboardButton(text="⬅️ К списку", callback_data=back_cb))

@@ -103,31 +103,70 @@ async def _deliver_post_to_user(bot: Bot, chat_id: int, post: Post, media_items)
         caption = text if len(text) <= 1024 else ""
         tail_text = "" if caption else text
 
-        album = []
-        for idx, item in enumerate(media_items):
-            itype = (getattr(item, "media_type", "") or "").strip().lower()
-            if itype == "photo":
-                album.append(
-                    InputMediaPhoto(
-                        media=item.file_id,
-                        caption=caption if idx == 0 else None,
-                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
-                    )
-                )
-            elif itype == "video":
-                album.append(
-                    InputMediaVideo(
-                        media=item.file_id,
-                        caption=caption if idx == 0 else None,
-                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
-                    )
-                )
+        types = [(getattr(item, "media_type", "") or "").strip().lower() for item in media_items]
 
-        if album:
-            await bot.send_media_group(chat_id=chat_id, media=album)
-            if tail_text.strip():
-                await bot.send_message(chat_id=chat_id, text=tail_text, parse_mode=ParseMode.HTML)
-            return
+        # If all are photo/video -> send as album
+        if types and all(t in ("photo", "video") for t in types):
+            album = []
+            for idx, item in enumerate(media_items):
+                itype = (getattr(item, "media_type", "") or "").strip().lower()
+                if itype == "photo":
+                    album.append(
+                        InputMediaPhoto(
+                            media=item.file_id,
+                            caption=caption if idx == 0 else None,
+                            parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                        )
+                    )
+                elif itype == "video":
+                    album.append(
+                        InputMediaVideo(
+                            media=item.file_id,
+                            caption=caption if idx == 0 else None,
+                            parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                        )
+                    )
+            if album:
+                await bot.send_media_group(chat_id=chat_id, media=album)
+                if tail_text.strip():
+                    await bot.send_message(chat_id=chat_id, text=tail_text, parse_mode=ParseMode.HTML)
+                return
+
+        # Otherwise (audio/document/etc) send sequentially; only first gets caption (if short enough)
+        first_caption_sent = False
+        for item in media_items:
+            itype = (getattr(item, "media_type", "") or "").strip().lower()
+            fid = getattr(item, "file_id", None)
+            if not fid:
+                continue
+            cap = None
+            pm = None
+            if not first_caption_sent and caption:
+                cap = caption
+                pm = ParseMode.HTML
+                first_caption_sent = True
+
+            if itype == "audio":
+                await bot.send_audio(chat_id=chat_id, audio=fid, caption=cap, parse_mode=pm)
+            elif itype == "document":
+                await bot.send_document(chat_id=chat_id, document=fid, caption=cap, parse_mode=pm)
+            elif itype == "voice":
+                await bot.send_voice(chat_id=chat_id, voice=fid, caption=cap, parse_mode=pm)
+            elif itype == "video_note":
+                await bot.send_video_note(chat_id=chat_id, video_note=fid)
+                if cap:
+                    await bot.send_message(chat_id=chat_id, text=cap, parse_mode=ParseMode.HTML)
+            elif itype == "photo":
+                await bot.send_photo(chat_id=chat_id, photo=fid, caption=cap, parse_mode=pm)
+            elif itype == "video":
+                await bot.send_video(chat_id=chat_id, video=fid, caption=cap, parse_mode=pm)
+            else:
+                # unknown -> fallback as message
+                await bot.send_message(chat_id=chat_id, text=cap or "", parse_mode=ParseMode.HTML if cap else None)
+
+        if tail_text.strip():
+            await bot.send_message(chat_id=chat_id, text=tail_text, parse_mode=ParseMode.HTML)
+        return
 
     if not media_type or not file_id:
         await bot.send_message(chat_id=chat_id, text=text, parse_mode=ParseMode.HTML)

@@ -96,31 +96,65 @@ async def _deliver_post_to_chat(message: Message, post, media_items) -> None:
         caption = text if len(text) <= 1024 else ""
         tail_text = "" if caption else text
 
-        album = []
-        for idx, item in enumerate(media_items):
-            itype = (getattr(item, "media_type", "") or "").strip().lower()
-            if itype == "photo":
-                album.append(
-                    InputMediaPhoto(
-                        media=item.file_id,
-                        caption=caption if idx == 0 else None,
-                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
-                    )
-                )
-            elif itype == "video":
-                album.append(
-                    InputMediaVideo(
-                        media=item.file_id,
-                        caption=caption if idx == 0 else None,
-                        parse_mode=ParseMode.HTML if idx == 0 and caption else None,
-                    )
-                )
+        types = [(getattr(item, "media_type", "") or "").strip().lower() for item in media_items]
 
-        if album:
-            await message.bot.send_media_group(chat_id=message.chat.id, media=album)
-            if tail_text.strip():
-                await message.answer(tail_text)
-            return
+        if types and all(t in ("photo", "video") for t in types):
+            album = []
+            for idx, item in enumerate(media_items):
+                itype = (getattr(item, "media_type", "") or "").strip().lower()
+                if itype == "photo":
+                    album.append(
+                        InputMediaPhoto(
+                            media=item.file_id,
+                            caption=caption if idx == 0 else None,
+                            parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                        )
+                    )
+                elif itype == "video":
+                    album.append(
+                        InputMediaVideo(
+                            media=item.file_id,
+                            caption=caption if idx == 0 else None,
+                            parse_mode=ParseMode.HTML if idx == 0 and caption else None,
+                        )
+                    )
+
+            if album:
+                await message.bot.send_media_group(chat_id=message.chat.id, media=album)
+                if tail_text.strip():
+                    await message.answer(tail_text)
+                return
+
+        # Non-album attachments (audio, etc): send sequentially; caption only for first
+        first_caption_sent = False
+        for item in media_items:
+            itype = (getattr(item, "media_type", "") or "").strip().lower()
+            fid = getattr(item, "file_id", None)
+            if not fid:
+                continue
+            cap = None
+            if not first_caption_sent and caption:
+                cap = caption
+                first_caption_sent = True
+
+            if itype == "audio":
+                await message.answer_audio(audio=fid, caption=cap)
+            elif itype == "document":
+                await message.answer_document(document=fid, caption=cap)
+            elif itype == "voice":
+                await message.answer_voice(voice=fid, caption=cap)
+            elif itype == "video_note":
+                await message.answer_video_note(video_note=fid)
+                if cap:
+                    await message.answer(cap)
+            elif itype == "photo":
+                await message.answer_photo(photo=fid, caption=cap)
+            elif itype == "video":
+                await message.answer_video(video=fid, caption=cap)
+
+        if tail_text.strip():
+            await message.answer(tail_text)
+        return
 
     if not media_type or not file_id:
         await message.answer(text)
